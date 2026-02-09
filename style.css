@@ -463,54 +463,74 @@ body {
     }
 }
 /* =========================
-   TRUE MOBILE NAV (APPLE STYLE)
+   MOBILE HAMBURGER FIX (ONLY)
 ========================= */
 
+/* base hamburger button (safe on all devices) */
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 26px;
+    cursor: pointer;
+    padding: 6px 8px;
+}
+
+/* MOBILE ONLY */
 @media (max-width: 768px) {
 
-  /* header must anchor absolute nav */
-  .header-inner {
-    position: relative;
-  }
+    /* show hamburger */
+    .menu-toggle {
+        display: block;
+    }
 
-  /* hide nav by default */
-  .nav {
-    display: none !important;
-  }
+    /* header anchor */
+    .header-inner {
+        position: relative;
+    }
 
-  /* show nav ONLY when hamburger toggles it */
-  .nav.active {
-    display: flex !important;
-    flex-direction: column;
-    gap: 20px;
+    /* hide nav by default */
+    .nav {
+        position: absolute;
+        top: 80px;
+        left: 0;
+        right: 0;
 
-    position: absolute;
-    top: 80px;
-    left: 0;
-    right: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
 
-    padding: 24px;
-    background: rgba(11,11,13,0.98);
-    backdrop-filter: blur(14px);
-    border-bottom: 1px solid #1f1f23;
-  }
+        padding: 24px;
+        background: rgba(11,11,13,0.98);
+        backdrop-filter: blur(16px);
 
-  /* mobile nav links */
-  .nav a {
-    margin: 0;
-    font-size: 18px;
-  }
+        border-bottom: 1px solid #1f1f23;
 
-  /* Tech Shop button full width */
-  .shop-btn {
-    width: fit-content;
-    padding: 10px 18px;
-  }
+        opacity: 0;
+        transform: translateY(-12px);
+        pointer-events: none;
 
-  /* hamburger placement */
-  .menu-toggle {
-    display: block;
-    z-index: 1100;
-  }
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    /* ACTIVE STATE */
+    .nav.active {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+
+    /* mobile nav links */
+    .nav a {
+        margin: 0;
+        font-size: 18px;
+    }
+
+    /* Tech Shop spacing */
+    .shop-btn {
+        margin-top: 8px;
+        width: fit-content;
+    }
 }
 
