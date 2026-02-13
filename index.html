@@ -8,20 +8,28 @@
 </head>
 <body>
 
+<!-- FIXED SVG BACKGROUND STAGE -->
+<div class="board-stage" aria-hidden="true">
+    <div class="board-camera" id="boardCamera">
+        <!-- SVG injected inline here -->
+    </div>
+    <div class="board-vignette"></div>
+</div>
+
 <!-- HEADER -->
 <header class="header">
     <div class="container header-inner">
         <div class="logo">EPH Technologies</div>
 
-        <!-- MOBILE MENU BUTTON (hidden on desktop via CSS) -->
+        <!-- MOBILE MENU BUTTON -->
         <button class="menu-toggle" aria-label="Toggle menu">☰</button>
 
         <nav class="nav">
-            <a href="#home">Home</a>
-            <a href="#about">About</a>
-            <a href="#services">Services</a>
-            <a href="#portfolio">Portfolio</a>
-            <a href="#contact">Contact</a>
+            <a href="#home" data-target="home">Home</a>
+            <a href="#about" data-target="about">About</a>
+            <a href="#services" data-target="services">Services</a>
+            <a href="#portfolio" data-target="portfolio">Portfolio</a>
+            <a href="#contact" data-target="contact">Contact</a>
             <a href="#" class="shop-btn">Tech Shop</a>
         </nav>
     </div>
@@ -86,7 +94,6 @@
 <!-- ABOUT -->
 <section class="about" id="about">
     <div class="container about-inner">
-
         <h2 class="about-title">About EPH Technologies</h2>
 
         <p class="about-lead">
@@ -104,14 +111,12 @@
         <p class="about-signature">
             We are your 1-Stop Solutions — Always Ready.
         </p>
-
     </div>
 </section>
 
 <!-- PORTFOLIO -->
 <section class="portfolio" id="portfolio">
     <div class="container">
-
         <div class="portfolio-header">
             <h2 class="portfolio-title">Selected Work</h2>
             <p class="portfolio-subtitle">
@@ -120,7 +125,6 @@
         </div>
 
         <div class="portfolio-grid">
-
             <div class="portfolio-item">
                 <h3>Smart CCTV Analytics</h3>
                 <p>
@@ -144,16 +148,13 @@
                     engineered for performance and growth.
                 </p>
             </div>
-
         </div>
-
     </div>
 </section>
 
 <!-- CONTACT -->
 <section class="contact" id="contact">
     <div class="container contact-inner">
-
         <div class="contact-left">
             <h2 class="contact-title">Let’s Build Something That Works</h2>
             <p class="contact-text">
@@ -180,19 +181,323 @@
 
             <a href="#" class="contact-btn">Start a Conversation</a>
         </div>
-
     </div>
 </section>
 
-<!-- MOBILE MENU SCRIPT (does NOTHING on desktop) -->
 <script>
-    const menuToggle = document.querySelector('.menu-toggle');
-    const nav = document.querySelector('.nav');
+(() => {
+  "use strict";
 
-    menuToggle.addEventListener('click', () => {
-        nav.classList.toggle('active');
+  // ----- CONFIG (unchanged except added TRACE_GROUP) -----
+  const CAMERA_WRAP = document.getElementById("boardCamera");
+  const SECTION_TO_CPU_STROKE = {
+    home: null,
+    about:   "#00E5FF",
+    services: "#A55AFF",
+    portfolio:"#FFB43C",
+    contact:  "#00FF8C",
+  };
+  const SECTION_PAD = { about: 3.1, services: 3.1, portfolio: 3.1, contact: 3.1 };
+  const ANIM_MS = 900;
+  const OBS_DEBOUNCE_MS = 140;
+
+  // ----- TRACE CONFIG (NEW – stroke based) -----
+  const TRACE_GROUP_ID = "Trace_Global";        // your exact group ID
+  const TRACE_BASE_COLOR = "#282E3B";           // dark grey
+  const TRACE_FLOW_COLOR = "rgba(120,200,255,0.65)"; // ice blue (slightly brighter)
+  const TRACE_GLOW_COLOR = "rgba(0,229,255,0.18)";
+  const TRACE_STROKE_WIDTH = 2;                 // from Figma
+  const TRACE_DASH_ARRAY = "8 8";               // dash + gap (adjust for density)
+  const TRACE_ANIM_DURATION = 1.2;              // base speed (seconds)
+
+  // ----- STATE -----
+  let svgEl = null;
+  let originalViewBox = null;
+  let activeSection = "home";
+  let activeBbox = null;
+  let rafId = null;
+  let isAnimating = false;
+  let traceFlowInstalled = false;   // one‑time installation
+
+  // ----- UTILS (unchanged) -----
+  const parseViewBox = (vbStr) => {
+    const parts = (vbStr || "").trim().split(/[\s,]+/).map(Number);
+    if (parts.length !== 4 || parts.some(Number.isNaN)) return null;
+    return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
+  };
+  const formatViewBox = (vb) => `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const easeInOutCubic = (t) => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+  const safeGetBBox = (node) => { try { return node.getBBox(); } catch { return null; } };
+  const hexToRgb = (hex) => {
+    const h = (hex || "").replace("#","").trim();
+    if (h.length !== 6) return null;
+    const n = parseInt(h,16);
+    return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+  };
+
+  // ----- VIEWBOX ANIMATION (unchanged) -----
+  const getCurrentViewBox = () => parseViewBox(svgEl.getAttribute("viewBox")) || originalViewBox;
+  const stopAnim = () => { if (rafId) cancelAnimationFrame(rafId); rafId = null; isAnimating = false; };
+
+  const computeTargetViewBoxFromBBox = (bbox, padFactor) => {
+    if (!bbox || !originalViewBox) return originalViewBox;
+    const viewportAspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const cx = bbox.x + bbox.width/2;
+    const cy = bbox.y + bbox.height/2;
+    let targetW = bbox.width * padFactor;
+    let targetH = bbox.height * padFactor;
+    const targetAspect = targetW / Math.max(1e-6, targetH);
+    if (targetAspect > viewportAspect) targetH = targetW / viewportAspect;
+    else targetW = targetH * viewportAspect;
+    let x = cx - targetW/2;
+    let y = cy - targetH/2;
+    const ovb = originalViewBox;
+    const maxX = ovb.x + ovb.w - targetW;
+    const maxY = ovb.y + ovb.h - targetH;
+    x = clamp(x, ovb.x, maxX);
+    y = clamp(y, ovb.y, maxY);
+    return { x, y, w: targetW, h: targetH };
+  };
+
+  const animateViewBoxTo = (targetVB, durationMs = ANIM_MS) => {
+    if (!svgEl || !targetVB) return;
+    const startVB = getCurrentViewBox();
+    const startTime = performance.now();
+    stopAnim();
+    isAnimating = true;
+    const tick = (now) => {
+      const tRaw = (now - startTime) / Math.max(1, durationMs);
+      const t = clamp(tRaw, 0, 1);
+      const e = easeInOutCubic(t);
+      const vb = {
+        x: startVB.x + (targetVB.x - startVB.x) * e,
+        y: startVB.y + (targetVB.y - startVB.y) * e,
+        w: startVB.w + (targetVB.w - startVB.w) * e,
+        h: startVB.h + (targetVB.h - startVB.h) * e,
+      };
+      svgEl.setAttribute("viewBox", formatViewBox(vb));
+      if (t < 1) rafId = requestAnimationFrame(tick);
+      else { isAnimating = false; rafId = null; }
+    };
+    rafId = requestAnimationFrame(tick);
+  };
+
+  // ----- CPU DETECTION & GLOW (unchanged) -----
+  const findCpuByStroke = (strokeHex) => {
+    if (!svgEl || !strokeHex) return null;
+    let el = svgEl.querySelector(`[stroke="${strokeHex}"]`);
+    if (el) return el;
+    const all = Array.from(svgEl.querySelectorAll("[stroke]"));
+    return all.find(n => (n.getAttribute("stroke") || "").toLowerCase() === strokeHex.toLowerCase()) || null;
+  };
+
+  const setCpuGlowActive = (node, strokeHex) => {
+    if (!svgEl) return;
+    svgEl.querySelectorAll(".cpu-active").forEach(n => n.classList.remove("cpu-active"));
+    if (node) node.classList.add("cpu-active");
+    if (strokeHex) {
+      const rgb = hexToRgb(strokeHex);
+      if (rgb) svgEl.style.setProperty("--cpuGlow", `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+    }
+  };
+
+  // ----- SECTION ACTIVATION (unchanged) -----
+  const activateSection = (sectionId) => {
+    if (!svgEl || !originalViewBox || !sectionId) return;
+    if (sectionId === activeSection && !isAnimating) return;
+    activeSection = sectionId;
+
+    if (sectionId === "home") {
+      activeBbox = null;
+      setCpuGlowActive(null, null);
+      animateViewBoxTo({ ...originalViewBox });
+      return;
+    }
+
+    const strokeHex = SECTION_TO_CPU_STROKE[sectionId];
+    const cpuNode = findCpuByStroke(strokeHex);
+    if (!cpuNode) {
+      console.warn(`[BOARD] CPU not found for "${sectionId}" – check stroke colors`);
+      setCpuGlowActive(null, null);
+      animateViewBoxTo({ ...originalViewBox });
+      return;
+    }
+
+    const bbox = safeGetBBox(cpuNode);
+    if (!bbox) {
+      console.warn(`[BOARD] getBBox failed for "${sectionId}"`);
+      setCpuGlowActive(null, null);
+      animateViewBoxTo({ ...originalViewBox });
+      return;
+    }
+
+    activeBbox = bbox;
+    setCpuGlowActive(cpuNode, strokeHex);
+    const pad = SECTION_PAD[sectionId] ?? 3.1;
+    const targetVB = computeTargetViewBoxFromBBox(bbox, pad);
+    animateViewBoxTo(targetVB);
+  };
+
+  const debounce = (fn, wait) => {
+    let t = null;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+  };
+  const activateSectionDebounced = debounce(activateSection, OBS_DEBOUNCE_MS);
+
+  // ----- INTERSECTION OBSERVER (unchanged) -----
+  const setupObserver = () => {
+    const ids = Object.keys(SECTION_TO_CPU_STROKE);
+    const sections = ids.map(id => document.getElementById(id)).filter(Boolean);
+    if (!sections.length) {
+      console.warn("[BOARD] Sections not found – need ids: home/about/services/portfolio/contact");
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter(e => e.isIntersecting)
+        .sort((a,b) => b.intersectionRatio - a.intersectionRatio);
+      if (visible.length) activateSectionDebounced(visible[0].target.id);
+    }, { threshold: [0.35, 0.5, 0.65], rootMargin: "-18% 0px -18% 0px" });
+    sections.forEach(s => io.observe(s));
+  };
+
+  // ----- RESIZE HANDLER (unchanged) -----
+  const setupResizeHandler = () => {
+    let t = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        if (!svgEl || !originalViewBox) return;
+        if (activeSection === "home" || !activeBbox) {
+          svgEl.setAttribute("viewBox", formatViewBox(originalViewBox));
+          return;
+        }
+        const pad = SECTION_PAD[activeSection] ?? 3.1;
+        const vb = computeTargetViewBoxFromBBox(activeBbox, pad);
+        svgEl.setAttribute("viewBox", formatViewBox(vb));
+      }, 90);
+    }, { passive: true });
+  };
+
+  // ========== 🐍 NEW – STROKE‑BASED “ELECTRIC WORMS” ==========
+  // Finds #Trace_Global, ensures strokes, clones for moving highlight.
+  const installTraceFlow = () => {
+    if (traceFlowInstalled || !svgEl) return;
+    traceFlowInstalled = true;
+
+    // 1. Locate the trace group
+    let traceGroup = svgEl.querySelector(`#${TRACE_GROUP_ID}`);
+    if (!traceGroup) {
+      // Fallback: try to find any group containing paths with stroke="#282E3B"
+      console.warn(`[TRACE] Group #${TRACE_GROUP_ID} not found – falling back to search by stroke color.`);
+      const possiblePaths = Array.from(svgEl.querySelectorAll(`path[stroke="${TRACE_BASE_COLOR}"]`));
+      if (possiblePaths.length) {
+        // wrap them in a temporary group
+        traceGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        traceGroup.id = "Trace_Global_fallback";
+        possiblePaths.forEach(p => traceGroup.appendChild(p.cloneNode(true)));
+        svgEl.appendChild(traceGroup);
+      } else {
+        console.error("[TRACE] No trace paths found – aborting flow effect.");
+        return;
+      }
+    }
+
+    // 2. Get all <path> elements inside the group
+    const tracePaths = Array.from(traceGroup.querySelectorAll("path"));
+    if (!tracePaths.length) {
+      console.error("[TRACE] No <path> elements inside trace group.");
+      return;
+    }
+
+    // 3. Ensure base paths have correct appearance
+    tracePaths.forEach(path => {
+      path.setAttribute("stroke", TRACE_BASE_COLOR);
+      path.setAttribute("stroke-width", TRACE_STROKE_WIDTH);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      path.classList.add("trace-base");   // optional, for styling
     });
+
+    // 4. Create a new group for the animated flow overlays
+    const flowGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    flowGroup.id = "Trace_Flow";
+    flowGroup.classList.add("trace-flow-group");
+
+    // 5. Clone each path, style with flow color, dasharray, animation
+    tracePaths.forEach((original, index) => {
+      const clone = original.cloneNode(false); // false = don't clone children (none)
+      
+      // Copy all attributes from original (d, transform, etc.)
+      const attrs = original.attributes;
+      for (let i = 0; i < attrs.length; i++) {
+        const attr = attrs[i];
+        if (attr.name === "class") continue; // we'll set our own
+        clone.setAttribute(attr.name, attr.value);
+      }
+
+      // Apply flow styling
+      clone.setAttribute("stroke", TRACE_FLOW_COLOR);
+      clone.setAttribute("stroke-width", TRACE_STROKE_WIDTH);
+      clone.setAttribute("fill", "none");
+      clone.setAttribute("stroke-linecap", "round");
+      clone.setAttribute("stroke-linejoin", "round");
+      clone.setAttribute("stroke-dasharray", TRACE_DASH_ARRAY);
+      
+      // Add animation via CSS class – we'll define .trace-flow in CSS
+      clone.classList.add("trace-flow");
+
+      // ----- Variation: random delay & duration (subtle difference) -----
+      const delay = (index * 0.2) % 1.2;         // staggered start
+      const duration = TRACE_ANIM_DURATION + (index % 3) * 0.2; // 1.2 / 1.4 / 1.6
+      clone.style.animationDelay = `${delay}s`;
+      clone.style.animationDuration = `${duration}s`;
+
+      flowGroup.appendChild(clone);
+    });
+
+    // 6. Insert flow group right after the original trace group (so it draws on top)
+    traceGroup.parentNode.insertBefore(flowGroup, traceGroup.nextSibling);
+
+    console.log(`[TRACE] Installed stroke‑based flow on ${tracePaths.length} traces.`);
+  };
+
+  // ----- SVG LOADER (unchanged – just calls new installTraceFlow) -----
+  const loadSvg = async () => {
+    try {
+      const res = await fetch("BOARD-BASE.svg", { cache: "no-store" });
+      const txt = await res.text();
+      CAMERA_WRAP.innerHTML = txt;
+
+      svgEl = CAMERA_WRAP.querySelector("svg");
+      if (!svgEl) throw new Error("SVG element not found");
+
+      svgEl.style.width = "100%";
+      svgEl.style.height = "100%";
+      svgEl.style.display = "block";
+      svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+      const vb = parseViewBox(svgEl.getAttribute("viewBox"));
+      originalViewBox = vb || { x:0, y:0, w:1440, h:1024 };
+      svgEl.setAttribute("viewBox", formatViewBox(originalViewBox));
+
+      installTraceFlow();      // 🐍 STROKE‑BASED FLOW
+      setupObserver();
+      setupResizeHandler();
+      activateSection("home");
+    } catch (err) {
+      console.error("[BOARD] Failed to load SVG:", err);
+    }
+  };
+
+  // ----- START -----
+  if (CAMERA_WRAP) loadSvg();
+  else console.error("[BOARD] #boardCamera element not found");
+})();
 </script>
+
 
 </body>
 </html>

@@ -533,4 +533,227 @@ body {
         width: fit-content;
     }
 }
+/* =========================================================
+   SVG BOARD CAMERA — premium readability + CPU glow (per CPU)
+   + global current flow hooks (no per-section strength)
+========================================================= */
 
+/* Stage behind everything */
+.board-stage{
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Camera viewport */
+.board-camera{
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.board-camera svg{
+  width: 100%;
+  height: 100%;
+  display: block;
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
+}
+
+/* Vignette overlay: keeps text readable but board visible */
+.board-vignette{
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 65% at 50% 35%, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.55) 68%, rgba(0,0,0,0.78) 100%),
+    linear-gradient(to bottom, rgba(0,0,0,0.22), rgba(0,0,0,0.46));
+}
+
+/* Make sure UI stays above board */
+header, section, footer{
+  position: relative;
+  z-index: 2;
+}
+
+/* -----------------------------------------
+   IMPORTANT FIX:
+   Do NOT nuke all section backgrounds.
+   If you kept `section{background:transparent!important;}` earlier,
+   override it here with "soft glass panels" instead.
+----------------------------------------- */
+section{
+  background: transparent !important;
+}
+
+/* Add a subtle glass panel behind each section container
+   (keeps board visible, text readable, does NOT change layout) */
+.hero .container,
+.services .container,
+.about .container,
+.portfolio .container,
+.contact .container{
+  position: relative;
+}
+
+.hero .container::before,
+.services .container::before,
+.about .container::before,
+.portfolio .container::before,
+.contact .container::before{
+  content: "";
+  position: absolute;
+  inset: -18px -18px;
+  border-radius: 26px;
+  background: rgba(11,11,13,0.28);
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.28);
+  z-index: -1;
+}
+
+/* Keep cards readable (already good, just slight transparency) */
+.service-card,
+.portfolio-item{
+  background: rgba(18,18,22,0.78);
+}
+
+/* -----------------------------------------
+   CPU Glow + Pulse (matches active CPU)
+   Your JS adds:
+   - class: cpu-active
+   - attribute: data-cpu="Cpu_About" etc
+----------------------------------------- */
+
+.cpu-active{
+  transform-origin: center;
+  animation: cpuPulse 1.9s ease-in-out infinite;
+}
+
+@keyframes cpuPulse{
+  0%,100%{ opacity: 0.92; transform: scale(1); }
+  50%{ opacity: 1; transform: scale(1.014); }
+}
+
+/* About (cyan) */
+.cpu-active[data-cpu="Cpu_About"]{
+  filter:
+    drop-shadow(0 0 10px rgba(0,229,255,0.55))
+    drop-shadow(0 0 26px rgba(0,229,255,0.30))
+    drop-shadow(0 0 62px rgba(0,229,255,0.16));
+}
+
+/* Services (purple) */
+.cpu-active[data-cpu="Cpu_Services"]{
+  filter:
+    drop-shadow(0 0 10px rgba(165,90,255,0.55))
+    drop-shadow(0 0 26px rgba(165,90,255,0.30))
+    drop-shadow(0 0 62px rgba(165,90,255,0.16));
+}
+
+/* Portfolio (orange) */
+.cpu-active[data-cpu="Cpu_Portfolio"]{
+  filter:
+    drop-shadow(0 0 10px rgba(255,180,60,0.55))
+    drop-shadow(0 0 26px rgba(255,180,60,0.30))
+    drop-shadow(0 0 62px rgba(255,180,60,0.16));
+}
+
+/* Contact (green) */
+.cpu-active[data-cpu="Cpu_Contact"]{
+  filter:
+    drop-shadow(0 0 10px rgba(0,255,140,0.52))
+    drop-shadow(0 0 26px rgba(0,255,140,0.28))
+    drop-shadow(0 0 62px rgba(0,255,140,0.14));
+}
+
+/* -----------------------------------------
+   GLOBAL CURRENT FLOW (same strength everywhere)
+   JS already tags traces group with .traces-global (if id exists)
+   This adds a moving "electric dash" on top of existing traces.
+----------------------------------------- */
+
+.traces-global path,
+.traces-global line,
+.traces-global polyline{
+  /* keep original fill, but add animated stroke overlay */
+  stroke: rgba(0, 229, 255, 0.28);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+
+  stroke-dasharray: 12 30;
+  animation: traceDash 2.2s linear infinite;
+
+  filter:
+    drop-shadow(0 0 6px rgba(0,229,255,0.12))
+    drop-shadow(0 0 16px rgba(0,229,255,0.08));
+  opacity: 0.9;
+}
+
+.traces-global path:nth-child(3n){
+  animation-duration: 1.6s;
+  opacity: 0.75;
+}
+.traces-global path:nth-child(4n){
+  animation-duration: 3.1s;
+  opacity: 0.65;
+}
+
+@keyframes traceDash{
+  to { stroke-dashoffset: -320; }
+}
+/* =========================================================
+   STROKE‑BASED “ELECTRIC WORMS” CURRENT FLOW
+   Paste at the very end of style.css
+========================================================= */
+
+/* Base traces (static dark grey) */
+.trace-base {
+  stroke: #282E3B;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+
+/* Flowing highlight layer (animated) */
+.trace-flow {
+  stroke: rgba(120, 200, 255, 0.65);  /* ice blue */
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 8 8;              /* dash/gap – tweak to taste */
+  animation: flowMove 1.2s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(0, 229, 255, 0.2));
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* Animation – dash moves left → right */
+@keyframes flowMove {
+  0%   { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -16; }    /* negative = moves forward */
+}
+
+/* CPU glow (unchanged, kept for reference) */
+.board-camera svg {
+  --cpuGlow: 0, 229, 255;
+}
+
+.cpu-active {
+  filter:
+    drop-shadow(0 0 10px rgba(var(--cpuGlow), 0.45))
+    drop-shadow(0 0 26px rgba(var(--cpuGlow), 0.28))
+    drop-shadow(0 0 60px rgba(var(--cpuGlow), 0.16));
+  transform-origin: center;
+  animation: cpuPulse 1.9s ease-in-out infinite;
+}
+
+@keyframes cpuPulse {
+  0%, 100% { opacity: 0.92; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.012); }
+}
